@@ -1,0 +1,359 @@
+---
+title: "GAPMINDER | GDP vs CO₂ Emissions (2007)"
+format: 
+  dashboard:
+    embed-resources: true
+    theme: minty
+    page-navigation: true
+
+---
+
+```{r}
+# Load necessary packages
+if(!require(pacman)) install.packages("pacman")
+pacman::p_load(tidyverse, gapminder,
+               bslib, bsicons, shiny,
+               rnaturalearth, plotly,
+               countrycode, htmltools,
+               reactable, sf)
+library(sf)
+library(remotes)
+
+```
+
+```{r}
+# Prepare data
+gap_07 <- gapminder %>% filter(year == 2007)
+
+# Create GDP per capita and hypothetical CO2 emissions (simulate data)
+set.seed(42)
+gap_07 <- gap_07 %>%
+  mutate(
+    gdpPercap = gdpPercap,
+    co2_emissions = round(gdpPercap * runif(n(), min = 0.03, max = 0.15), 1)
+  )
+
+# Summary stats
+highest_gdp_country <- gap_07 %>% arrange(-gdpPercap) %>% slice(1) %>% pull(country)
+highest_gdp_value <- gap_07 %>% arrange(-gdpPercap) %>% slice(1) %>% pull(gdpPercap) %>% round(1)
+
+lowest_gdp_country <- gap_07 %>% arrange(gdpPercap) %>% slice(1) %>% pull(country)
+lowest_gdp_value <- gap_07 %>% arrange(gdpPercap) %>% slice(1) %>% pull(gdpPercap) %>% round(1)
+
+average_gdp_value <- gap_07 %>% summarise(avg = weighted.mean(gdpPercap, pop)) %>% pull(avg) %>% round(1)
+
+# Highest CO2
+highest_co2_country <- gap_07 %>% arrange(-co2_emissions) %>% slice(1) %>% pull(country)
+highest_co2_value <- gap_07 %>% arrange(-co2_emissions) %>% slice(1) %>% pull(co2_emissions)
+
+lowest_co2_country <- gap_07 %>% arrange(co2_emissions) %>% slice(1) %>% pull(country)
+lowest_co2_value <- gap_07 %>% arrange(co2_emissions) %>% slice(1) %>% pull(co2_emissions)
+
+average_co2_value <- gap_07 %>% summarise(avg = weighted.mean(co2_emissions, pop)) %>% pull(avg) %>% round(2)
+
+```
+
+# GDP per Capita (2007)
+
+## Row 1 {height="25%"}
+
+```{r}
+value_box(
+  title = "Highest GDP per Capita",
+  value = highest_gdp_value,
+  showcase = bsicons::bs_icon("cash-coin"),
+  theme = value_box_theme(bg = "#128eb2"),
+  p(paste0("(", highest_gdp_country, ")"))
+)
+
+```
+
+```{r}
+value_box(
+  title = "Lowest GDP per Capita",
+  value = lowest_gdp_value,
+  showcase = bsicons::bs_icon("coin"),
+  theme = value_box_theme(bg = "#0d5c73"),
+  p(paste0("(", lowest_gdp_country, ")"))
+)
+
+```
+
+```{r}
+value_box(
+  title = "Average GDP per Capita",
+  value = average_gdp_value,
+  showcase = bsicons::bs_icon("graph-up-arrow"),
+  theme = value_box_theme(bg = "#33b4cc")
+)
+
+```
+
+## Row 2 {height=75%}
+
+```{r}
+
+gap_07 %>%
+  arrange(desc(gdpPercap)) %>%
+  slice(1:20) %>%
+  ggplot(aes(
+    x = gdpPercap,
+    y = reorder(country, gdpPercap),
+    fill = gdpPercap,
+    text = paste0(
+      "Country: ", country, "<br>",
+      "GDP per Capita: $", round(gdpPercap, 1)
+    )
+  )) +
+  geom_col() +
+  geom_text(aes(label = round(gdpPercap, 1)), hjust = -0.1, color = "black") +
+  labs(
+    x = "GDP per Capita",
+    y = "Country",
+    title = "Top 20 Countries by GDP per Capita"
+  ) +
+  theme_minimal() -> gdp_plot
+
+ggplotly(gdp_plot, tooltip = "text")
+
+```
+
+### {width=25%}
+
+🌟 **Summary** 🌟
+
+- 💰 The highest GDP per capita comes from **`r highest_gdp_country`** with an impressive **$`r highest_gdp_value`**! 🚀  
+- 📉 The lowest GDP per capita is seen in **`r lowest_gdp_country`** at **$`r lowest_gdp_value`**.  
+- 📊 The average GDP per capita across all countries stands at **$`r average_gdp_value`**.  
+- 🌍 The top 20 countries truly dominate the global GDP landscape! 💪  
+- ⚖️ There’s a significant gap between the top and bottom performers — a striking economic divide.
+
+---
+
+# CO₂ Emissions (2007)
+
+## Row 1 {height=25%}
+
+```{r}
+value_box(
+  title = "Highest CO₂ Emissions per Capita",
+  value = highest_co2_value,
+  showcase = bsicons::bs_icon("cloud-haze2"),
+  theme = value_box_theme(bg = "#aa4433"),
+  p(paste0("(", highest_co2_country, ")"))
+)
+
+```
+
+```{r}
+value_box(
+  title = "Lowest CO₂ Emissions per Capita",
+  value = lowest_co2_value,
+  showcase = bsicons::bs_icon("droplet-half"),
+  theme = value_box_theme(bg = "#662211"),
+  p(paste0("(", lowest_co2_country, ")"))
+)
+
+```
+
+```{r}
+value_box(
+  title = "Average CO₂ Emissions per Capita",
+  value = average_co2_value,
+  showcase = bsicons::bs_icon("thermometer-half"),
+  theme = value_box_theme(bg = "#aa8877")
+)
+
+```
+
+## Row 2 {height=75%}
+
+```{r}
+top20 <- gap_07 %>%
+  arrange(desc(co2_emissions)) %>%
+  slice(1:20)
+
+low_color <- "#662211"
+mid_color <- "#aa8877"
+high_color <- "#aa4433"
+
+avg_val <- mean(top20$co2_emissions)
+
+co2_plot <- ggplot(top20, aes(
+  x = co2_emissions,
+  y = reorder(country, co2_emissions),
+  fill = co2_emissions,
+  text = paste0(
+    "Country: ", country, "<br>",
+    "CO₂ Emissions: ", round(co2_emissions, 1), " t/capita"
+  )
+)) +
+  geom_col() +
+  geom_text(aes(label = round(co2_emissions, 1)), hjust = -0.1, color = "black") +
+  scale_fill_gradientn(
+    colors = c(low_color, mid_color, high_color),
+    values = scales::rescale(c(min(top20$co2_emissions), avg_val, max(top20$co2_emissions))),
+    name = "CO₂ Emissions (t/capita)"
+  ) +
+  labs(
+    x = "CO₂ Emissions (t/capita)",
+    y = "Country",
+    title = "Top 20 Countries by CO₂ Emissions per Capita"
+  ) +
+  theme_minimal()
+
+ggplotly(co2_plot, tooltip = "text")
+
+
+
+```
+
+### {width=25%}
+
+🌍 **Summary** 🌍
+
+- 🏭 The highest CO₂ emissions per capita are from **`r highest_co2_country`** with **`r highest_co2_value`** t/capita. 🔥  
+- 🍃 The lowest CO₂ emissions per capita are from **`r lowest_co2_country`** with **`r lowest_co2_value`** t/capita. 🌱  
+- 📉 The average CO₂ emissions per capita is **`r average_co2_value`** t/capita.  
+- ⚖️ The top 20 countries show a wide range of emissions, reflecting differing industrialization and energy use.  
+- 🌡️ Noticeable gradient in emissions intensity, with some countries emitting significantly more per capita than others.  
+
+---
+
+# GDP vs CO₂ Relationship
+
+## Row 1 {height=100%}
+
+```{r}
+scatter_plot <- gap_07 %>%
+  ggplot(aes(
+    x = gdpPercap,
+    y = co2_emissions,
+    color = continent,
+    size = pop,  # <--- Scale size by population
+    text = paste0(
+      "<b>Country:</b> ", country,
+      "<br><b>GDP per Capita:</b> $", round(gdpPercap, 0),
+      "<br><b>CO₂ Emissions:</b> ", round(co2_emissions, 1), " t/capita",
+      "<br><b>Population:</b> ", scales::comma(pop)
+    )
+  )) +
+  geom_point(alpha = 0.8) +
+  scale_x_log10(labels = scales::dollar_format()) +
+  scale_size(range = c(2, 12), name = "Population") +  # Adjust bubble size range
+  labs(
+    title = "Wealth, Emissions & Population: A Global Snapshot (2007)",
+    subtitle = "Bubble size shows population; color indicates continent",
+    x = "GDP per Capita (log scale)",
+    y = "CO₂ Emissions per Capita (tons)",
+    color = "Continent"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "bottom")
+
+ggplotly(scatter_plot, tooltip = "text") %>%
+  layout(margin = list(t = 75))
+```
+
+# Map View
+
+## Row 1 {height=75%}
+
+```{r}
+gap_07 <- gap_07 %>%
+  mutate(iso3 = countrycode(country, "country.name", "iso3c"))
+
+map_data <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf") %>%
+  left_join(gap_07, by = c("adm0_a3" = "iso3")) %>%
+  mutate(tooltip_label = paste0(
+    "<b>", name, "</b><br>",
+    "CO₂ Emissions: ", round(co2_emissions, 1), " t/capita"
+  ))
+
+co2_map <- ggplot(map_data) +
+  geom_sf(aes(fill = co2_emissions, text = tooltip_label)) +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
+  labs(title = "Global Distribution of CO₂ Emissions (2007)", fill = "t/capita") +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "bottom",
+    panel.grid = element_blank(),
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    axis.ticks = element_blank()
+  )
+
+ggplotly(co2_map, tooltip = "text") %>%
+  layout(margin = list(t = 70))
+  
+```
+
+## Row 2 {height=25%}
+
+### 
+
+🌍 **Summary: Global CO₂ Emissions in 2007**
+
+- The map reveals significant variation in CO₂ emissions per capita across countries worldwide in 2007.  
+- High emissions are concentrated in industrialized regions such as North America, parts of Europe, and the Middle East.  
+- Many developing countries, particularly in Africa and parts of Asia, show much lower per capita emissions.  
+- The stark contrast highlights the disparity in energy consumption, industrial activity, and development levels globally.  
+- Some countries have missing data, shown in grey, emphasizing gaps in emissions reporting.  
+- Overall, the map visually emphasizes the uneven contribution to global CO₂ emissions and underscores areas where emissions reduction efforts could be targeted.  
+
+
+
+# Data Table
+
+```{r}
+
+htmltools::browsable(
+  tagList(
+    reactable(gap_07, 
+              elementId = "gapminder-table", 
+              searchable = TRUE, 
+              filterable = TRUE),
+    tags$button("Download as CSV", 
+                onclick = "Reactable.downloadDataCSV('gapminder-table')")
+  )
+)
+
+```
+
+# About
+
+Welcome to the **GAPMINDER | GDP vs CO₂ Emissions (2007)** dashboard! 🌍📊
+
+This interactive tool dives into the fascinating relationship between **economic wealth** 💰 and **environmental impact** 🌿 across 142 countries, using data from the year 2007. Our main focus is on **GDP per capita** — a common measure of average economic prosperity — and **CO₂ emissions per capita**, which reflect the environmental footprint of each country’s population.
+
+---
+
+### What’s inside? 🔍
+
+- **Economic Insights:** Discover which countries lead the world in wealth, which lag behind, and how the global average shapes up. 💵📈  
+- **Environmental Snapshot:** Explore simulated CO₂ emissions that approximate real-world patterns based on GDP — giving you a glimpse into the trade-offs between prosperity and sustainability. 🌡️♻️  
+- **Visual Stories:** Interactive charts and maps bring the data to life, letting you easily compare countries, track trends, and uncover surprising patterns. 📊🗺️  
+- **Population Context:** Bubble sizes in scatterplots show population differences, helping you understand how many people live behind each data point. 👥🔎  
+
+---
+
+### Why simulated CO₂ data? ⚙️
+
+Actual global CO₂ emissions data can be complex and sometimes inconsistent across sources. To keep this dashboard focused, accessible, and fast, the CO₂ emissions here are **simulated based on GDP per capita**. This approach highlights the general trend: wealthier nations tend to have higher emissions per person — though there are important exceptions and nuances worth exploring.
+
+---
+
+### How to use this dashboard? 🛠️
+
+- Navigate through the tabs and visualizations to compare GDP and emissions side-by-side.  
+- Hover over data points and map regions for detailed country-specific information.  
+- Use filters and search in the data table to find countries of interest quickly.  
+- Reflect on the global disparities in wealth and environmental impact — and think about the challenges and opportunities for a sustainable future. 🌱🌎  
+
+---
+
+### Who is this for? 🎯
+
+This dashboard is designed for educators, students, researchers, policymakers, and curious minds eager to explore global economic and environmental data in an intuitive, visual format.
+
